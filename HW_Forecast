@@ -1,0 +1,43 @@
+##Create Holt-Winters Plotting Function via Time Series object
+HW_Forecast<-function(ts_object, num.ahead, CI=.95, error.ribbon='steelblue', line.size=1.5, start="2011-01-01", aggregate.date=7, date.format='%Y-%b-%d'){
+
+  ##Calculate Fitted Line and Forecasts
+  hw_object <- HoltWinters(ts_object)
+  forecast <- predict(hw_object, n.ahead=num.ahead, prediction.interval=T, level=.95)
+  for_values <- data.frame(time=round(time(forecast), 3), value_forecast=as.data.frame(forecast)$fit, dev=as.data.frame(forecast)$upr-as.data.frame(forecast)$fit)
+  fitted_values <- data.frame(time=round(time(hw_object$fitted), 3), value_fitted=as.data.frame(hw_object$fitted)$xhat)
+  actual_values <- data.frame(time=round(time(hw_object$x), 3), Actual=c(hw_object$x))
+  
+  ##Merge and Melt into one column for plotting
+  graphset <- merge(actual_values, fitted_values, by='time', all=TRUE)  
+  graphset <- merge(graphset, for_values, all=TRUE, by='time')  
+  graphset[is.na(graphset$dev), ]$dev <- 0
+  graphset$Fitted <- c(rep(NA, nrow(graphset)-(nrow(for_values) + nrow(fitted_values))), fitted_values$value_fitted, for_values$value_forecast)
+  graphset.melt <- melt(graphset[, c('time', 'Actual', 'Fitted')], id='time')
+  
+  ##Create time breaks for x-axis
+  xs <- as.Date(start) + 0:(length(unique(graphset.melt$time))-1) 
+  xs <- as.Date(start) + aggregate.date*(0:round((length(unique(graphset.melt$time))-1)/aggregate.date))
+  timeform <- format(xs, date.format)
+
+  ##Customize a ggplot  
+  p <- (ggplot(graphset.melt, aes(x=time, y=value)) 
+        + theme_bw(base_size = 14, base_family = "") 
+        + theme(legend.title = element_text(colour="black", size=16, face="bold")
+                , legend.position='top'
+                , plot.margin = unit(c(0,1,1,1), "cm")
+                , axis.text.x=element_text(angle=60, hjust=1, size=18)
+                , axis.title.x=element_text(size=18)
+                , axis.text.y = element_text(size=18)
+                , axis.title.y=element_text(size=18)) 
+        + coord_cartesian(xlim=c(min(graphset.melt$time),max(graphset.melt$time))) 
+        + geom_ribbon(data=graphset, aes(x=time, y=Fitted, ymin=Fitted-dev, ymax=Fitted + dev), alpha=.5, fill="steelblue") 
+        + geom_line(aes(colour=variable), size=1.25) 
+        + geom_vline(x=max(actual_values$time), lty=2)  
+        + scale_colour_manual("Legend", values = c("purple", "black")) 
+        + scale_x_discrete(breaks = 1:length(timeform), labels=c(timeform)) 
+        + geom_smooth(se=.95, method = "loess"))
+  
+  ##Return plot for labeling
+  return(p)
+}
