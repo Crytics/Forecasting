@@ -1,10 +1,231 @@
 #########################################
-# Create Sales Forecasting Model
-# ---------------------------------
+# Create GMS Forecasting Model
+# ---------------------------------------
 # Created by  : Adam Nguyen
 # Updated by  : Adam Nguyen
-# Created at  : 10/02/2013
-# Updated at  : 11/24/2013
+# Created at  : 09/15/2013
+# Updated at  : xx/xx/xxxx
 # Description : Holt-Winters GMS Forecast
 #########################################
 
+#Clear Environment
+rm(list = ls(all = TRUE))
+
+#Names of working directory and files
+myfolder <- "C:/Users/adam.nguyen/Desktop/Useful R/"
+file <- "WorkingDirectory/GMS_forecasting/GMS_forecast2.csv"
+
+#Set Directory
+setInternet2(TRUE)
+Sys.setenv(TZ='UTC')
+Sys.time()
+setwd(myfolder)
+getwd()
+source(paste(c(myfolder,"library.forecast.txt"),collapse="")) #Get library
+source(paste(c(myfolder,"HWForecast.txt"),collapse="")) #Get library
+library("ggplot2")
+library("scales")
+library("Cairo")
+library("grid")
+
+#Import Data
+data.raw <- read.table(paste0(myfolder,file), header=TRUE, stringsAsFactors=FALSE, sep=",")
+data.raw <- as.data.frame(format(data.raw, scientific = FALSE)) #Remoe scientific notation
+head(data.raw,100)
+str(data.raw)
+
+#Reformat spending and date data for time series
+data.raw$Actual <- as.numeric(data.raw$Actual)
+data.raw$Forecast <- as.numeric(data.raw$Forecast)
+data.raw$Date <- strptime(data.raw$Date, "%m/%d/%Y")
+str(data.raw)
+tail(data.raw, 100)
+
+#Descriptive Statistics and outlier analysis
+summary(data.raw)
+plot(data.raw$Actual)
+smoothScatter(data.raw$Actual)
+
+#Remove outliers with either subset(x, condition) or data[condition] <- NA
+par(mfrow=c(1,1))
+data.raw.boxplot <- boxplot(data.raw$Actual)
+data.raw.boxplot$out #Examing outliers from boxplot
+data.raw <- na.omit(data.raw[,1:2])
+
+data.raw$Actual2 <- data.raw$Actual
+for(i in data.raw.boxplot$out){
+  data.raw$Actual2[data.raw$Actual2==i] <- NA
+}
+
+#Remove further noise manually and restore proper outliers
+data.raw$Actual2[522] <- NA
+data.raw$Actual2[547] <- NA
+data.raw$Actual2[549] <- NA
+data.raw$Actual2[550] <- NA
+data.raw$Actual2[557] <- NA
+data.raw$Actual2[638] <- NA
+data.raw$Actual2[640] <- NA
+data.raw$Actual2[641] <- NA
+data.raw$Actual2[675] <- NA
+data.raw$Actual2[766] <- NA
+data.raw$Actual2[795] <- NA
+data.raw$Actual2[843] <- NA
+data.raw$Actual2[859] <- NA
+data.raw$Actual2[887] <- NA
+data.raw$Actual2[913] <- NA
+data.raw$Actual2[914] <- NA
+data.raw$Actual2[920] <- NA
+data.raw$Actual2[978] <- NA
+data.raw$Actual2[1020] <- NA
+data.raw$Actual2[1024] <- 5053000000
+data.raw$Actual2[1045] <- 4845000000
+data.raw$Actual2[1053] <- 4974000000
+
+#Compare raw to cleaned
+par(mfrow=c(2,2))
+plot(data.raw$Actual)
+plot(data.raw$Actual2)
+smoothScatter(data.raw$Actual)
+smoothScatter(data.raw$Actual2)
+
+#Replace columns
+data.raw$Actual <- data.raw$Actual2
+data.raw <- data.raw[,1:2]
+
+#Explore missingness of a dataset with a missmap
+par(mfrow=c(1,1))
+missmap(data.raw)
+
+#Impute values using EMB algorithm assuming multivariate normal distribution (works with a normality assumption)
+#Assume missing data occur at random
+data.amelia <- amelia(data.raw[,1:2], m = 5, ts = "Date", polytime = 2, p2s = 0)
+str(data.amelia)
+table(data.amelia$imputations[[3]]$Actual)
+smoothScatter(data.amelia$imputations[[3]]$Actual)
+
+#Verify imputations by comparing imputation density and overimputation diagnostic graph
+#Check for convergence at global maximum (since algorithm is detemrinsitic, starting values may affect imputation)
+par(mfrow=c(2,2))
+compare.density(data.amelia, var = "Actual")
+overimpute(data.amelia, var = "Actual")
+disperse(data.amelia, dims = 1, m = 20)
+disperse(data.amelia, dims = 2, m = 20)
+
+#Confirm imputed values
+data.raw[,2][100]
+data.amelia$imputations$imp1[100,2]
+data.amelia$imputations$imp2[100,2]
+data.amelia$imputations$imp3[100,2]
+data.amelia$imputations$imp4[100,2]
+data.amelia$imputations$imp5[100,2]
+
+data.raw[,2][1004]
+data.amelia$imputations$imp1[1004,2]
+data.amelia$imputations$imp2[1004,2]
+data.amelia$imputations$imp3[1004,2]
+data.amelia$imputations$imp4[1004,2]
+data.amelia$imputations$imp5[1004,2]
+
+str(data.amelia$imputations)
+
+
+#Create time series with imputated data
+data.ts <- xts(data.amelia$imputations$imp1$Actual, data.amelia$imputations$imp1$Date, frequency=7, tz="UTC")
+#data.ts <- na.omit(data.ts) #Remove NA values
+names(data.ts) <- "GMS_Actual" #add column names
+str(data.ts)
+
+#Convert to a regular Time Series object
+data.ts2 <- ts(data.ts, start=1, frequency=7)
+str(data.ts2)
+attributes(data.ts2)
+plot(data.ts2)
+
+
+#######Ready for Forecasting
+
+#Holt-Winters Filtering
+data.hw <- HoltWinters(data.ts2)
+data.fcast <- predict(data.hw, n.ahead=14, prediction.interval=TRUE, level=0.95)
+plot(data.hw, data.fcast)
+
+##Create a time series loop for imputed values
+str(data.ts)
+data.ts$Actual
+data.meld <- NULL
+
+for(i in 1:5){
+  data.ts <- xts(data.amelia$imputations[[i]]["Actual"], data.amelia$imputations[[i]]$Date, frequency=7, tz="UTC")  
+  data.meld <- cbind(data.meld,data.ts)  
+  rem <- rowMeans(data.meld) #means the imputed values
+} 
+head(data.meld)
+data.ts$Actual <- rem
+
+
+###Agggregate for month
+##Convert sum to monthly data
+#data.ts.weekly <- apply.weekly(zoo(data.ts$Actual, as.Date(index(data.ts))), mean)
+#data.ts.weekly <- aggregate(data.ts$Actual, as.yearmon, FUN = mean)
+#Trim incomplete month
+#data.ts.weekly <- data.ts.weekly[1:(length(data.ts.weekly)-1),1]
+#head(data.ts.weekly)
+#data.ts2 <- ts(data.ts.weekly, start=c(2011,1), frequency=12)
+
+
+#ARIMA Filtering
+acf(data.ts2)
+tsdisplay(data.ts2)
+tsdisplay(diff(data.ts2))
+data.arima <- Arima(diff(data.ts2), order=c(0,1,1), seasonal=c(0,1,1))
+tsdisplay(residuals(data.arima))
+Box.test(residuals(data.arima), lag=20, type="Ljung")
+plot(forecast(data.arima, h=14))
+plot(forecast(auto.arima(data.ts2), h=14))
+
+#Triple Series Plot
+par(mfrow=c(3,1))
+plot(data.ts2)
+plot(data.hw, data.fcast)
+plot(forecast(data.arima, h=14))
+
+##Add labels and plot
+GMS <- HWplot(data.ts2, num.ahead=14, start="2011-01-01", aggregate.date=7)
+
+#Set breaks based on max and min values
+ybreaks <- c(seq(0,5,by=1))*10^9
+ylabs <- paste(ybreaks/10^9,"BN",sep="")
+(GMS + coord_cartesian(xlim=c(.8*max(GMS$data$time), max(GMS$data$time))) 
+    + scale_y_continuous(breaks=ybreaks, labels = ylabs)
+    + labs(title="", x="Weekly Spending Trend", y="Total GMS Spending (JPY)")
+    + theme(legend.title = element_text(colour="black", size=16, face="bold")
+                , legend.position='top'
+                , plot.margin = unit(c(0,1,1,1), "cm")
+                , axis.text.x=element_text(angle=60, hjust=1, size=18)
+                , axis.title.x=element_text(size=18)
+                , axis.text.y = element_text(size=18)
+                , axis.title.y=element_text(size=18)))
+
+
+
+#Export data to CSV
+write.csv(as.data.frame(data.fcast), file = "rfcast.csv")
+jpeg("Forecast.jpg")
+
+#myPres<-PPT.Init(visible=TRUE)
+#myPres<-PPT.AddBlankSlide(myPres)
+#PPT.AddGraphicstoSlide(myPres, size = c(10, 10, 700, 500), dev.out.type = "jpeg")
+
+##Evaluate Model
+
+#Create residuals
+res <- residuals(data.hw)
+
+#Box.test
+Box.test(res)
+
+#Residual Histogram
+hist(res)
+
+#Acf Plot
+tsdisplay(data.ts2)
