@@ -28,11 +28,13 @@ library("scales")
 library("Cairo")
 library("grid")
 
+
 #Import Data
 data.raw <- read.table(paste0(myfolder,file), header=TRUE, stringsAsFactors=FALSE, sep=",")
 data.raw <- as.data.frame(format(data.raw, scientific = FALSE)) #Remoe scientific notation
 head(data.raw,100)
 str(data.raw)
+
 
 #Reformat spending and date data for time series
 data.raw$Actual <- as.numeric(data.raw$Actual)
@@ -45,6 +47,14 @@ tail(data.raw, 100)
 summary(data.raw)
 plot(data.raw$Actual)
 smoothScatter(data.raw$Actual)
+
+
+###Simulatation Data
+data.raw <- NULL
+data.raw$Date <- seq(as.Date(Sys.time())-999, as.Date(Sys.time()), by="day")
+data.raw$Actual <- 5*10^9*abs(rnorm(1000,1,1))
+data.raw <- as.data.frame(data.raw)
+head(data.raw)
 
 #Remove outliers with either subset(x, condition) or data[condition] <- NA
 par(mfrow=c(1,1))
@@ -190,10 +200,10 @@ plot(data.hw, data.fcast)
 plot(forecast(data.arima, h=14))
 
 ##Add labels and plot
-GMS <- HWplot(data.ts2, num.ahead=14, start="2011-01-01", aggregate.date=7)
+GMS <- HW_Forecast(data.ts2, num.ahead=14, start="2011-01-01", aggregate.date=7)
 
 #Set breaks based on max and min values
-ybreaks <- c(seq(0,5,by=1))*10^9
+ybreaks <- c(seq(-10,20,by=2))*10^9
 ylabs <- paste(ybreaks/10^9,"BN",sep="")
 (GMS + coord_cartesian(xlim=c(.8*max(GMS$data$time), max(GMS$data$time))) 
     + scale_y_continuous(breaks=ybreaks, labels = ylabs)
@@ -205,7 +215,6 @@ ylabs <- paste(ybreaks/10^9,"BN",sep="")
                 , axis.title.x=element_text(size=18)
                 , axis.text.y = element_text(size=18)
                 , axis.title.y=element_text(size=18)))
-
 
 
 #Export data to CSV
