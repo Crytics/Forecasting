@@ -1,0 +1,178 @@
+###########################################
+# Forecasting via Hierarchical Time Series
+# ---------------------------------
+# Created by  : Adam Nguyen
+# Updated by  : Adam Nguyen
+# Created at  : 04/01/2014
+# Updated at  : xx/xx/xxxx
+# Description : TeradataR Forecasting
+###########################################
+
+#Clear Environment
+#rm(list = ls(all = TRUE))
+update.packages(ask = FALSE, dependencies = c('Suggests'))
+
+#Names of working directory and files
+myfolder <- "C:/Users/adam.nguyen/Desktop/teradataR/"
+
+#Set Directory
+setInternet2(TRUE)
+Sys.setenv(language = "en", tz = 'UTC')
+options(max.print = 2000)
+setwd(myfolder)
+source(paste(c("C:/Users/adam.nguyen/Desktop/GH/", "library.R"), collapse = "")) #Get library
+source(paste(c("C:/Users/adam.nguyen/Desktop/GH/", "break_munging.txt"), collapse = "")) #Get tools
+
+#Load Project Specific libraries
+library("reshape2")
+library("hts")
+
+#Establish Teradata Connection
+#RShowDoc(“teradataR”, package = “teradataR”) 
+Teradata.Connect <- tdConnect("Teradata2750")
+
+#Query Teradata via R
+data <- tdQuery(**QUERY**)
+
+#Extract Tera Data Frame by names and descriptive statistics
+#data <- td.data.frame("**file**  ", "**database**")
+
+#Data Sanity Checks
+dim.td.data.frame(data) #Check dimensions
+dim(data)
+#td.values(as.td.data.frame(data), gms) #Assess data integrity
+summary(data) #Summarize data
+head(data) #See features
+
+#Convert into DataFrame
+data.arrange <- as.data.frame(arrange(data, g1, g2, datetime))
+
+#Cast the molten dataset into genre-based summation
+data.cast <- dcast(data.arrange
+					, datetime ~ g1# + g2
+					, fun.aggregate = sum
+					, margins = FALSE
+					, value.var = "gms"
+					, fill = 0)
+
+#Convert date into date datatype
+data.cast$datetime <- as.Date(as.character(data.cast$datetime), "%Y%m%d")
+
+#Convert to XTS object
+data.xts <- as.xts(data.cast[, -1], order.by = data.cast$datetime)
+
+#Aggregate to weekly
+data.weekly <- apply(data.xts, 2, function(x) apply.weekly(x, sum))
+data.aggregate <- cbind(apply.weekly(data.xts, sum), data.weekly)
+data.aggregate <- data.aggregate[, -1] #Select Genres to Plot
+data.aggregate2 <- apply(data.aggregate, 2, function(x) x / max(x))
+#data.aggregate2 <- data.aggregate2[, -1]
+
+
+
+#Calculate in-genre p-values
+data.std <- apply(data.aggregate2, 2, sd)
+data.zscore <- data.aggregate2 / data.std
+data.pvalue <- apply(data.zscore, 1:2, function(x) 2 * pnorm(-abs(x)))
+data.round <- round(data.pvalue, 2)
+
+#Convert Significant p-values into binary
+data.case <- apply(data.round, 1:2, function(x) 
+		if (x > .995 | x < .005){
+			x <- 1
+		} else {
+			x <- 0
+		}
+)
+
+data.sum <- apply(data.case, 1, sum)
+plot(ts(data.sum))
+
+#write.csv(data.aggregate2, "tempa.csv")
+#write.csv(data.round, "tempb.csv")
+#write.csv(data.case, "tempc.csv")
+
+#Create k-means clustering
+wss <- (nrow(data.case)-1)*sum(apply(data.case,2,var))
+
+clusters <- 20
+for (i in 2:clusters) wss[i] <- sum(kmeans(data.case, 
+  	 centers=i)$withinss)
+
+plot(1:clusters
+	, wss
+	, type="b"
+	, xlab="Number of Clusters"
+	, ylab="Within groups sum of squares")
+
+data.kmeans <- kmeans(data.case, centers = 6)
+aggregate(data.case, by=list(data.kmeans$cluster),FUN = mean)
+# append cluster assignment
+data.aggregate3 <- data.frame(data.case, data.kmeans$cluster)
+
+#Plot clusters
+clusplot(data.case
+		, data.kmeans$cluster
+		, color = TRUE
+		, shade = TRUE
+		, labels = 2
+		, lines = 0)
+
+
+
+#ETS Model
+#data.ets <- ets(data.aggregate[, 5], model = "ZZZ", damped =TRUE)
+#plot(data.ets)
+
+#Convert into Grouped Time Series object
+data.gts <- gts(data.aggregate2 
+				, groups = as.matrix(t(unique(data[, 0:2])))
+				, gnames = c("Genre 1", "Genre 2")
+				)
+
+#GTS Window to remove final uncomplete week
+data.window <- window.gts(data.gts
+						, level = c(0:2)
+						, start = 1
+						, end = 105)
+
+#Plot GTS
+plot.gts(data.window, ,levels = c(0:2), labels = TRUE)
+
+
+#Create Forecast
+data.forecast <- forecast.gts(data.window
+								, h = 24
+								, method = "bu"
+								, fmethod = "arima"
+								, parallel = TRUE
+								, num.cores = 4
+								)
+
+#Forecast Plots
+plot.gts(data.forecast, levels = 1, labels = TRUE)
+
+
+#Train and Test for Accuracy
+data.train <- window.gts(
+		data.gts
+		, start = 1
+		, end = 18)
+
+data.test <- forecast.gts(data.train
+						, h = 6
+						, method = "bu"
+						, fmethod = "arima"
+						, parallel = TRUE
+						, num.cores = 4
+						)
+
+
+#Accuracy measures from test forecast against actual
+accuracy.gts(fcasts = data.test, test = data.gts, levels = 0)
+
+
+#Write to table
+write.table(data.aggregate, file = "temp.csv")
+
+
