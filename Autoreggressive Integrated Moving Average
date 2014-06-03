@@ -1,0 +1,94 @@
+###########################################
+# Forecasting ARIMA Time Series
+# ---------------------------------
+# Created by  : Adam Nguyen
+# Updated by  : Adam Nguyen
+# Created at  : 05/30/2014
+# Updated at  : 06/02/2014
+# Description : TeradataR Forecasting
+###########################################
+
+#Clear Environment
+#rm(list = ls(all = TRUE))
+#update.packages(ask = FALSE, dependencies = c('Suggests'))
+
+#Names of working directory and files
+myfolder <- "C:/Users/adam.nguyen/Desktop/teradataR/"
+
+#Set Directory
+setInternet2(TRUE)
+Sys.setenv(language = "en", tz = 'UTC')
+options(max.print = 2000)
+setwd(myfolder)
+source(paste(c("C:/Users/adam.nguyen/Desktop/GH/", "library.R"), collapse = "")) #Get library
+source(paste(c("C:/Users/adam.nguyen/Desktop/GH/", "break_munging.txt"), collapse = "")) #Get tools
+
+#Load Project Specific libraries
+library(reshape2)
+library(hts)
+library(tm)
+library(stringr)
+
+#Read data
+data <- read.csv("file")
+head(data)
+str(data)
+
+#Remove commas
+data$gms <- as.numeric(gsub(",", "", data[, 3]))
+
+#Create time series object
+data.ts <- ts(data$gms, start = c(2010, 1), end = c(2014, 4), frequency = 12)
+
+#Check Regular Plot
+plot(data.ts)
+
+##Building Model
+#Autocorrelation Checks
+acf(data.ts, lag.max = 24)
+acf(diff(data.ts), lag.max = 24)
+
+#Arima fitting
+data.arima <- Arima(data.ts, order = c(3,1,2), seasonal = c(0,1,1)) #accounts for differencing
+data.arima <- auto.arima(data.ts, trace = TRUE)
+summary(data.arima)
+
+##Testing Model
+#Out-of-Sample RMSE from OTEXT
+getrmse <- function(x, h,...)
+{
+  train.end <- time(x)[length(x) - h]
+  test.start <- time(x)[length(x) - h + 1]
+  train <- window(x, end = train.end)
+  test <- window(x, start = test.start)
+  fit <- Arima(train, ...)
+  fc <- forecast(fit, h = h)
+  return(accuracy(fc, test)[2, "RMSE"])
+}
+
+test <- NULL
+for(i in 0:3){
+	for(j in 1:1){ #Keeping at first difference
+		for(k in 0:3){
+value <- i * 100 + j * 10 + k
+test$RMSE[value] <- getrmse(data.ts, h = 24, order = c(i, j, k), seasonal = c(0, 1, 1))
+test$flag[value] <- i * 100 + j * 10 + k
+		}
+	}
+}
+test.df <- as.data.frame(test)
+na.omit(test.df)
+
+#Test for stationarity of ARIMA points
+tsdisplay(residuals(data.arima))
+Box.test(residuals(data.arima), lag = 1, type = "Ljung")
+summary(data.arima)
+
+##Forecasting Model
+forecast(data.arima, h = 12)
+
+##Plotting Model
+plot(forecast(data.arima, h = 12))
+
+##Write to CSV
+write.csv(data.arima, "arima.csv")
