@@ -13,7 +13,7 @@ rm(list = ls(all = TRUE))
 
 #Names of working directory and files
 myfolder <- "C:/Users/adam.nguyen/Desktop/Useful R/"
-file <- "WorkingDirectory/GMS_forecasting/GMS_forecast2.csv"
+file <- "WorkingDirectory/forecasts.csv"
 
 #Set Directory
 setInternet2(TRUE)
@@ -87,9 +87,6 @@ data.raw$Actual2[914] <- NA
 data.raw$Actual2[920] <- NA
 data.raw$Actual2[978] <- NA
 data.raw$Actual2[1020] <- NA
-data.raw$Actual2[1024] <- 5053000000
-data.raw$Actual2[1045] <- 4845000000
-data.raw$Actual2[1053] <- 4974000000
 
 #Compare raw to cleaned
 par(mfrow=c(2,2))
