@@ -5,7 +5,7 @@
 # Updated by  : Adam Nguyen
 # Created at  : 09/15/2013
 # Updated at  : xx/xx/xxxx
-# Description : Holt-Winters GMS Forecast
+# Description : Holt-Winters Sales Forecast
 #########################################
 
 #Clear Environment
@@ -139,7 +139,7 @@ str(data.amelia$imputations)
 #Create time series with imputated data
 data.ts <- xts(data.amelia$imputations$imp1$Actual, data.amelia$imputations$imp1$Date, frequency=7, tz="UTC")
 #data.ts <- na.omit(data.ts) #Remove NA values
-names(data.ts) <- "GMS_Actual" #add column names
+names(data.ts) <- "Sales_Actual" #add column names
 str(data.ts)
 
 #Convert to a regular Time Series object
@@ -197,14 +197,14 @@ plot(data.hw, data.fcast)
 plot(forecast(data.arima, h=14))
 
 ##Add labels and plot
-GMS <- HW_Forecast(data.ts2, num.ahead=14, start="2011-01-01", aggregate.date=7)
+Sales <- HW_Forecast(data.ts2, num.ahead=14, start="2011-01-01", aggregate.date=7)
 
 #Set breaks based on max and min values
 ybreaks <- c(seq(-10,20,by=2))*10^9
 ylabs <- paste(ybreaks/10^9,"BN",sep="")
-(GMS + coord_cartesian(xlim=c(.8*max(GMS$data$time), max(GMS$data$time))) 
+(Sales + coord_cartesian(xlim=c(.8*max(Sales$data$time), max(Sales$data$time))) 
     + scale_y_continuous(breaks=ybreaks, labels = ylabs)
-    + labs(title="", x="Weekly Spending Trend", y="Total GMS Spending (JPY)")
+    + labs(title="", x="Weekly Spending Trend", y="Total Sales Spending (JPY)")
     + theme(legend.title = element_text(colour="black", size=16, face="bold")
                 , legend.position='top'
                 , plot.margin = unit(c(0,1,1,1), "cm")
